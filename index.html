@@ -908,6 +908,42 @@ function autoBackup(){
   try{localStorage.setItem("lemons_autobackup",JSON.stringify(STATE));}catch(e){}
   if(firebaseDb){try{firebaseDb.ref("autobackup").set(STATE);}catch(e){}}
 }
+
+// ── FIREBASE SYNC FOR SETUP / FUNNEL / FINANCE / WIZARD ──
+// Each uses on() real-time listener. On first load, if local data exists
+// but Firebase path is empty, push local up (old device migration).
+function initSyncPath(fbPath, lsKey, defaultVal, onUpdate) {
+  if (!firebaseDb) return;
+  var ref = firebaseDb.ref(fbPath);
+  // Real-time listener — CRITICAL: on(), not once()
+  ref.on("value", function(snap) {
+    var fbData = snap.val();
+    if (fbData !== null) {
+      // Firebase has data — use it and update localStorage
+      try { localStorage.setItem(lsKey, JSON.stringify(fbData)); } catch(e) {}
+      if (onUpdate) onUpdate(fbData);
+    } else {
+      // Firebase is empty — check if local has data to push up
+      try {
+        var local = localStorage.getItem(lsKey);
+        if (local) {
+          var parsed = JSON.parse(local);
+          if (Object.keys(parsed).length > 0) {
+            ref.set(parsed); // Push local data to Firebase
+          }
+        }
+      } catch(e) {}
+    }
+  });
+}
+function fbSaveSync(fbPath, data) {
+  if (firebaseDb) { try { firebaseDb.ref(fbPath).set(data); } catch(e) {} }
+}
+// Initialize all 4 sync paths
+initSyncPath("sync/setup", "lemons_setup", {}, function(data) { setupState = data; if (currentTab === "setup") renderSetupGuide(); });
+initSyncPath("sync/funnel", "lemons_funnel", {ltChecked:{}}, function(data) { if (currentTab === "funnel") renderFunnel(); });
+initSyncPath("sync/finance", "lemons_finance", {paid:{}}, function(data) { if (currentTab === "finance") renderFinance(); });
+initSyncPath("sync/wizard", "lemons_wizard", {}, function(data) { wizardStates = data; });
 // Auto-restore on load if live data is empty
 (function(){
   if(firebaseDb){
@@ -1158,7 +1194,7 @@ function fetchFreshProducts(){/* Product fetch placeholder — requires API key 
 
 // ── FINANCE ──
 function loadFinanceState(){try{var s=localStorage.getItem("lemons_finance");if(s)return JSON.parse(s);}catch(e){}return{paid:{}};}
-function saveFinanceState(fs){try{localStorage.setItem("lemons_finance",JSON.stringify(fs));}catch(e){}}
+function saveFinanceState(fs){try{localStorage.setItem("lemons_finance",JSON.stringify(fs));}catch(e){}fbSaveSync("sync/finance",fs);}
 function toggleCost(id){var fs=loadFinanceState();fs.paid[id]=!fs.paid[id];saveFinanceState(fs);renderFinance();}
 function renderFinance(){
   var fs=loadFinanceState();
@@ -1176,7 +1212,7 @@ function renderFinance(){
 
 // ── FUNNEL ──
 function loadFunnelState(){try{var s=localStorage.getItem("lemons_funnel");if(s)return JSON.parse(s);}catch(e){}return{ltChecked:{}};}
-function saveFunnelState(fs){try{localStorage.setItem("lemons_funnel",JSON.stringify(fs));}catch(e){}}
+function saveFunnelState(fs){try{localStorage.setItem("lemons_funnel",JSON.stringify(fs));}catch(e){}fbSaveSync("sync/funnel",fs);}
 function toggleLinktreeTask(id){var fs=loadFunnelState();fs.ltChecked[id]=!fs.ltChecked[id];saveFunnelState(fs);renderFunnel();}
 var activePlatformFunnel="tiktok";
 function switchPlatformFunnel(key){activePlatformFunnel=key;renderPlatformFunnelDetail();document.querySelectorAll(".pf-btn").forEach(function(b){var isA=b.dataset.key===key;var d=PLATFORM_FUNNELS[b.dataset.key];b.style.background=isA?d.color:"var(--surface-2)";b.style.color=isA?"#fff":"var(--ink-2)";b.style.borderColor=isA?d.color:"var(--border)";});}
@@ -1197,7 +1233,7 @@ function renderFunnel(){
 // ── SETUP GUIDE ──
 var setupState={};
 function loadSetupState(){try{var s=localStorage.getItem("lemons_setup");return s?JSON.parse(s):{};}catch(e){return{};}}
-function saveSetupState(){try{localStorage.setItem("lemons_setup",JSON.stringify(setupState));}catch(e){}}
+function saveSetupState(){try{localStorage.setItem("lemons_setup",JSON.stringify(setupState));}catch(e){}fbSaveSync("sync/setup",setupState);}
 setupState=loadSetupState();
 var openSetupTask=null;
 function renderSetupGuide(){
@@ -1278,7 +1314,7 @@ var WIZARD_DATA={
 };
 var wizardStates={};
 function loadWizardState(){try{var s=localStorage.getItem("lemons_wizard");return s?JSON.parse(s):{};}catch(e){return{};}}
-function saveWizardState(){try{localStorage.setItem("lemons_wizard",JSON.stringify(wizardStates));}catch(e){}}
+function saveWizardState(){try{localStorage.setItem("lemons_wizard",JSON.stringify(wizardStates));}catch(e){}fbSaveSync("sync/wizard",wizardStates);}
 wizardStates=loadWizardState();
 function openWizard(key){
   if(!wizardStates[key])wizardStates[key]={currentStep:0};
